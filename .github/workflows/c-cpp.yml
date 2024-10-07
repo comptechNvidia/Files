@@ -1,0 +1,42 @@
+name: C/C++ CI
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Cache dependencies
+      uses: actions/cache@v3
+      with:
+        path: build/
+        key: ${{ runner.os }}-build-${{ hashFiles('**/Makefile') }}
+
+    - name: Configure
+      run: |
+        ./configure --prefix=${{ github.workspace }}/build
+      env:
+        CC: gcc  # or clang
+        CXX: g++ # or clang++
+      continue-on-error: false  # Fail if configure fails
+
+    - name: Build
+      run: make
+      continue-on-error: false  # Fail if build fails
+
+    - name: Run Tests
+      run: make check
+      continue-on-error: false  # Fail if tests fail
+
+    - name: Package Distribution
+      run: make distcheck
+      continue-on-error: false  # Fail if distribution check fails
