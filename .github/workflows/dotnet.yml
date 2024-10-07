@@ -1,0 +1,49 @@
+name: .NET
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: 8.0.x
+
+    - name: Restore dependencies
+      run: dotnet restore
+      continue-on-error: false  # Fail the job if restore fails
+
+    - name: Build
+      run: dotnet build --no-restore --configuration Release --verbosity normal
+      env:
+        DOTNET_CLI_TELEMETRY_OPTOUT: 1  # Opt out of telemetry for privacy
+      continue-on-error: false  # Fail the job if build fails
+
+    - name: Test
+      run: dotnet test --no-build --verbosity normal
+      continue-on-error: false  # Fail the job if tests fail
+
+    - name: Notify Success
+      if: success()
+      run: echo "Build and tests completed successfully!"
+
+    - name: Notify Failure
+      if: failure()
+      run: echo "Build or tests failed. Please check the logs for details."
+
+    # Optional: Clean up build artifacts or temporary files
+    - name: Cleanup
+      run: |
+        echo "Cleaning up temporary files..."
+        # Add any cleanup commands here if necessary
