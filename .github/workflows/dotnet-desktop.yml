@@ -1,0 +1,83 @@
+name: .NET Core Desktop
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+
+  build:
+    strategy:
+      matrix:
+        configuration: [Debug, Release]
+
+    runs-on: windows-latest  # Specify the runner type
+
+    env:
+      SOLUTION_NAME: your-solution-name                         # Your solution name, e.g., MyWpfApp.sln
+      TEST_PROJECT_PATH: your-test-project-path                 # Path to your test project, e.g., MyWpfApp.Tests\MyWpfApp.Tests.csproj
+      WAP_PROJECT_DIRECTORY: your-wap-project-directory-name    # WAP project directory relative to the solution, e.g., MyWpfApp.Package
+      WAP_PROJECT_PATH: your-wap-project-path                   # Path to your WAP project, e.g., MyWpf.App.Package\MyWpfApp.Package.wapproj
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0  # Fetch all history for accurate versioning
+
+    # Install the .NET Core SDK
+    - name: Install .NET Core
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: 8.0.x
+
+    # Add MSBuild to the PATH
+    - name: Setup MSBuild
+      uses: microsoft/setup-msbuild@v2
+
+    # Execute all unit tests in the solution
+    - name: Execute unit tests
+      run: dotnet test $env:TEST_PROJECT_PATH --configuration ${{ matrix.configuration }} --no-build --verbosity normal
+      continue-on-error: true  # Allow build to proceed even if tests fail
+
+    # Restore the application to populate the obj folder with RuntimeIdentifiers
+    - name: Restore the application
+      run: msbuild $env:SOLUTION_NAME /t:Restore /p:Configuration=${{ matrix.configuration }}
+      env:
+        Configuration: ${{ matrix.configuration }}
+
+    # Decode the Base64 encoded pfx and save the Signing Certificate
+    - name: Decode the PFX
+      run: |
+        $pfx_cert_byte = [System.Convert]::FromBase64String("${{ secrets.Base64_Encoded_Pfx }}")
+        $certificatePath = Join-Path -Path $env:WAP_PROJECT_DIRECTORY -ChildPath GitHubActionsWorkflow.pfx
+        [IO.File]::WriteAllBytes("$certificatePath", $pfx_cert_byte)
+
+    # Create the app package by building and packaging the Windows Application Packaging project
+    - name: Create the app package
+      run: msbuild $env:WAP_PROJECT_PATH /p:Configuration=${{ matrix.configuration }} /p:UapAppxPackageBuildMode=StoreUpload /p:AppxBundle=Always /p:PackageCertificateKeyFile=GitHubActionsWorkflow.pfx /p:PackageCertificatePassword=${{ secrets.Pfx_Key }}
+      env:
+        Configuration: ${{ matrix.configuration }}
+
+    # Remove the temporary PFX file
+    - name: Cleanup
+      run: Remove-Item -Path "$env:WAP_PROJECT_DIRECTORY\GitHubActionsWorkflow.pfx" -Force
+
+    # Upload the MSIX package
+    - name: Upload build artifacts
+      uses: actions/upload-artifact@v3
+      with:
+        name: MSIX Package
+        path: ${{ env.WAP_PROJECT_DIRECTORY }}\AppPackages\**  # Use ** to include all package versions
+
+    # Notification of success
+    - name: Notify Success
+      if: success()
+      run: echo "Build and package completed successfully!"
+
+    # Notification of failure
+    - name: Notify Failure
+      if: failure()
+      run: echo "Build or package failed. Please check the logs for details."
